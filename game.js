@@ -132,18 +132,42 @@ const BIOMES = {
   grassland: {
     name: 'Grassland',
     world:        { w: 1800, h: 1100 },
-    grassBase:    '#9ec97a',
-    grassDark:    '#7eb35e',
-    grassBlade:   '#5e8e44',
+    decorType:    'grass',                 // dispatches drawGround()
+    groundBase:   '#9ec97a',
+    groundDark:   '#7eb35e',
+    groundFleck:  '#5e8e44',
     flowerColors: ['#ffe066', '#ffffff', '#f29ab2', '#c995ff'],
     treeCount:    14,
+    cactusCount:  0,
+    rockCount:    0,
     treeSeed:     1234,
     flowerCount:  70,
     leverCount:   3,
     bullies:      ['bob'],
   },
-  // desert / forest / aquatics added in M5+
+
+  desert: {
+    name: 'Desert',
+    world:        { w: 2200, h: 1300 },    // bigger map → more open sightlines
+    decorType:    'sand',
+    groundBase:   '#e6c98c',               // warm tan
+    groundDark:   '#cda866',
+    groundFleck:  '#b08850',
+    flowerColors: ['#e8a04a', '#d8602a', '#fde08a'],   // wildflowers / cactus blooms
+    treeCount:    0,                       // no trees here
+    cactusCount:  16,
+    rockCount:    9,
+    treeSeed:     4321,
+    flowerCount:  28,                      // sparse
+    leverCount:   4,
+    bullies:      ['bob', 'burt'],
+    hasMesa:      true,                    // backdrop silhouette at the north edge
+  },
+  // forest / aquatics added in M6+
 };
+
+// Order players progress through. Used by the post-victory transition.
+const BIOME_ORDER = ['grassland', 'desert', 'forest', 'aquatics'];
 
 /* ---------------------------------------------------------------------
    BULLIES — enemy data. Spec: 1m ≈ 80 px in Eden Hall world units.
@@ -163,6 +187,29 @@ const BULLIES = {
     skin:           '#dcb594',
     shirt:          '#7d6738',
     shirtTrim:      '#5a4828',
+    pants:          '#2c2c2c',
+    shoes:          '#1a1a1a',
+  },
+
+  burt: {
+    name:           'Burt',
+    speed:          72,         // very slow — relies on his reach
+    patrolFactor:   0.55,
+    sight:          1600,       // 20m at 80 px/m — sees across most of the desert
+    hitDistance:    480,        // 6m — long-reach swat
+    hitCooldown:    6.0,
+    chaseGiveUp:    900,
+    radius:         24,
+    smokeRate:      0,          // doesn't smoke
+    smokeMaxAge:    0,
+    // Drag (hook) — yanks the target in when ready
+    hookCooldown:   8.0,
+    hookRange:      1600,       // 20m
+    dragDuration:   0.55,
+    dragStopDist:   140,        // pull stops when target is this close to Burt
+    skin:           '#dec8a8',
+    shirt:          '#5e4a8e',  // sinister purple
+    shirtTrim:      '#3d2e60',
     pants:          '#2c2c2c',
     shoes:          '#1a1a1a',
   },
@@ -1081,35 +1128,55 @@ function rngFromSeed(seed) {
   };
 }
 
+// Variable name kept as `trees`, but it now holds heterogeneous obstacles
+// (trees, cacti, rocks). Each item has a `type` field so drawTree() can dispatch.
 function generateTrees(biome) {
-  const trees = [];
+  const obstacles = [];
   const rng = rngFromSeed(biome.treeSeed);
   const { w, h } = biome.world;
   const cx = w / 2, cy = h / 2;
-  let attempts = 0;
-  while (trees.length < biome.treeCount && attempts < 400) {
-    attempts++;
-    const x = 100 + rng() * (w - 200);
-    const y = 100 + rng() * (h - 200);
-    const canopyR = 38 + rng() * 16;
-    // Keep a clearing around the spawn point.
-    if ((x - cx) * (x - cx) + (y - cy) * (y - cy) < 240 * 240) continue;
-    // Don't crowd against another tree.
-    let bad = false;
-    for (const t of trees) {
-      const dx = x - t.x, dy = y - t.y;
-      const minSep = canopyR + t.canopyR + 24;
-      if (dx * dx + dy * dy < minSep * minSep) { bad = true; break; }
+
+  // Per-type sizes — keeps things readable to tweak.
+  const TYPE_SPEC = {
+    tree:   { canopyMin: 38, canopyVar: 16, trunkR: 14 },
+    cactus: { canopyMin: 28, canopyVar: 10, trunkR: 16 },
+    rock:   { canopyMin: 24, canopyVar: 14, trunkR: 20 },
+  };
+  const PLAN = [
+    { type: 'tree',   count: biome.treeCount   || 0 },
+    { type: 'cactus', count: biome.cactusCount || 0 },
+    { type: 'rock',   count: biome.rockCount   || 0 },
+  ];
+
+  for (const { type, count } of PLAN) {
+    const ts = TYPE_SPEC[type];
+    let placed = 0, attempts = 0;
+    while (placed < count && attempts < 600) {
+      attempts++;
+      const x = 100 + rng() * (w - 200);
+      const y = 100 + rng() * (h - 200);
+      const canopyR = ts.canopyMin + rng() * ts.canopyVar;
+      // Keep a clearing around the spawn point.
+      if ((x - cx) * (x - cx) + (y - cy) * (y - cy) < 240 * 240) continue;
+      // Don't crowd against another obstacle.
+      let bad = false;
+      for (const t of obstacles) {
+        const dx = x - t.x, dy = y - t.y;
+        const minSep = canopyR + t.canopyR + 22;
+        if (dx * dx + dy * dy < minSep * minSep) { bad = true; break; }
+      }
+      if (bad) continue;
+      obstacles.push({
+        type,
+        x, y,
+        canopyR,
+        trunkR: ts.trunkR,
+        seed: 1000 + obstacles.length * 11,
+      });
+      placed++;
     }
-    if (bad) continue;
-    trees.push({
-      x, y,
-      canopyR,
-      trunkR: 14,           // collision radius (just the trunk, not the canopy)
-      seed: 1000 + trees.length * 11,
-    });
   }
-  return trees;
+  return obstacles;
 }
 
 function generateFlowers(biome) {
@@ -1265,6 +1332,7 @@ function initBiome(biomeKey) {
     iframes: 0,
     hitFlashT: 0,
     fartSlowT: 0,         // seconds of fart-slow remaining (refreshed while inside smoke)
+    beingDragged: null,   // bully reference while Burt is reeling the player in
   };
 
   // Teammates = the two unselected characters, spawned beside the player.
@@ -1288,6 +1356,7 @@ function initBiome(biomeKey) {
       hitFlashT: 0,
       reviveT: 0,
       fixingLever: null,
+      beingDragged: null,           // set when Burt is reeling them in
     };
   });
 
@@ -1317,6 +1386,10 @@ function initBiome(biomeKey) {
       confusedT: 0,                 // seconds of confusion remaining (Ada's scream)
       wanderTimer: 0,               // re-pick wander target while confused
       hitFlashT: 0,                 // brief flash when hit by Vada's stun
+      // Burt-only fields (harmless on Bob)
+      hookCooldown: (key === 'burt') ? 2.0 : 0,    // 2s grace before first hook
+      dragT: 0,
+      dragTarget: null,
     };
   });
 
@@ -1372,13 +1445,36 @@ function updateBullies(dt) {
   const p = game.player;
   for (const b of game.bullies) {
     const def = BULLIES[b.key];
-    if (b.hitCooldown > 0) b.hitCooldown -= dt;
-    if (b.slowT > 0)       b.slowT      -= dt;
-    if (b.stunT > 0)       b.stunT      -= dt;
-    if (b.confusedT > 0)   b.confusedT  -= dt;
-    if (b.hitFlashT > 0)   b.hitFlashT  -= dt;
+    if (b.hitCooldown > 0)  b.hitCooldown -= dt;
+    if (b.slowT > 0)        b.slowT       -= dt;
+    if (b.stunT > 0)        b.stunT       -= dt;
+    if (b.confusedT > 0)    b.confusedT   -= dt;
+    if (b.hitFlashT > 0)    b.hitFlashT   -= dt;
+    if (b.hookCooldown > 0) b.hookCooldown -= dt;
     // Smoke trail only ticks while Bob is actually moving — no farts while
     // stunned or standing still. Timer carries over so resuming feels natural.
+
+    // ----- Burt's drag tick: yank the target toward him over `dragDuration`.
+    // Runs even when stunned (the hand is already extended), so getting stunned
+    // mid-drag doesn't free the target.
+    if (b.dragT > 0 && b.dragTarget) {
+      const target = b.dragTarget;
+      const ddx = b.x - target.x;
+      const ddy = b.y - target.y;
+      const dd = Math.hypot(ddx, ddy);
+      const stopDist = def.dragStopDist || 140;
+      if (dd > stopDist) {
+        const remaining = Math.max(0.05, b.dragT);
+        const pullSpeed = Math.max(700, (dd - stopDist) / remaining);
+        target.x += (ddx / dd) * pullSpeed * dt;
+        target.y += (ddy / dd) * pullSpeed * dt;
+      }
+      b.dragT -= dt;
+      if (b.dragT <= 0) {
+        if (target.beingDragged === b) target.beingDragged = null;
+        b.dragTarget = null;
+      }
+    }
 
     if (b.stunT > 0) {
       // Frozen — no movement, no attacks. Smoke still puffs.
@@ -1427,6 +1523,19 @@ function updateBullies(dt) {
         if (d > def.chaseGiveUp || b.target.hearts <= 0) {
           b.target = null;
           b.state = 'patrol';
+        }
+      }
+
+      // Burt: fire the long-reach drag if a target's in hook range and we're cool.
+      if (b.key === 'burt' && b.target && b.dragT <= 0 && b.hookCooldown <= 0 &&
+          b.target.hearts > 0 && !b.target.beingDragged) {
+        const td = Math.hypot(b.x - b.target.x, b.y - b.target.y);
+        const minDragDist = def.dragStopDist + 40;
+        if (td > minDragDist && td < def.hookRange) {
+          b.dragT = def.dragDuration;
+          b.dragTarget = b.target;
+          b.target.beingDragged = b;
+          b.hookCooldown = def.hookCooldown;
         }
       }
 
@@ -1480,8 +1589,8 @@ function updateBullies(dt) {
       }
     }
 
-    // Smoke emission — only while moving. Big, opaque, unmissable puffs.
-    if (b.moving) {
+    // Smoke emission — Bob only, and only while moving. Big, opaque puffs.
+    if (b.moving && def.smokeRate > 0) {
       b.smokeTimer += dt;
       if (b.smokeTimer >= def.smokeRate) {
         b.smokeTimer = 0;
@@ -1510,6 +1619,13 @@ function updateTeammates(dt) {
   for (const tm of game.teammates) {
     if (tm.iframes > 0) tm.iframes -= dt;
     if (tm.hitFlashT > 0) tm.hitFlashT -= dt;
+
+    // ----- Being dragged: AI is locked out, Burt's drag tick moves us.
+    if (tm.beingDragged) {
+      tm.moving = true;
+      tm.walkPhase += dt;
+      continue;
+    }
 
     // ----- Downed: lie on the ground; player can revive by holding Space.
     if (tm.hearts <= 0) {
@@ -1767,9 +1883,9 @@ function updatePlay(dt) {
     p.fartSlowT = Math.max(0, p.fartSlowT - dt);
   }
 
-  // Read arrow keys only if alive
+  // Read arrow keys — but not while dead, dragged, or in death freeze.
   let dx = 0, dy = 0;
-  if (p.hearts > 0) {
+  if (p.hearts > 0 && !p.beingDragged) {
     if (keysHeld.has('ArrowUp'))    dy -= 1;
     if (keysHeld.has('ArrowDown'))  dy += 1;
     if (keysHeld.has('ArrowLeft'))  dx -= 1;
@@ -1871,27 +1987,42 @@ function updatePlay(dt) {
     }
   }
 
-  // ----- Victory countdown -----
+  // ----- Victory countdown — advance to the next biome when it ends -----
   if (game.victoryT > 0) {
     game.victoryT -= dt;
-    if (game.victoryT <= 0) {
-      // For M3 we drop back to the character-select screen so the player
-      // can replay or pick a different hero.  M5 will hand off to biome 2.
-      game.scene = 'select';
-      keysHeld.clear();
-    }
+    if (game.victoryT <= 0) advanceBiome();
+  }
+}
+
+function advanceBiome() {
+  const idx = BIOME_ORDER.indexOf(game.biome);
+  const nextKey = BIOME_ORDER[idx + 1];
+  if (nextKey && BIOMES[nextKey]) {
+    initBiome(nextKey);   // implemented biome — keep playing
+  } else if (nextKey) {
+    // Biome exists in the order but isn't built yet — show placeholder.
+    game.placeholderBiome = nextKey;
+    game.scene = 'placeholder';
+    keysHeld.clear();
+  } else {
+    // No more biomes (game complete in v1)
+    game.scene = 'select';
+    keysHeld.clear();
   }
 }
 
 /* ---- Drawing pieces for the world ---- */
 
-function drawGrass() {
+function drawGround() {
   const w = game.world;
   const b = w.def;
-  ctx.fillStyle = b.grassBase;
+  ctx.fillStyle = b.groundBase;
   ctx.fillRect(0, 0, w.w, w.h);
 
-  // Sprinkle small grass tufts only in the visible region (perf).
+  // Optional backdrop silhouette (e.g. desert mesas at the north edge)
+  if (b.hasMesa) drawMesaBackdrop();
+
+  // Per-biome surface decoration drawn only in the visible region (perf).
   const cam = game.camera;
   const cell = 56;
   const sx = Math.max(0, Math.floor(cam.x / cell) - 1) * cell;
@@ -1899,6 +2030,39 @@ function drawGrass() {
   const ex = Math.min(w.w, cam.x + CONFIG.view.w + cell);
   const ey = Math.min(w.h, cam.y + CONFIG.view.h + cell);
 
+  if (b.decorType === 'sand') {
+    // Tiny dots — sand specks instead of grass blades.
+    for (let gx = sx; gx < ex; gx += cell) {
+      for (let gy = sy; gy < ey; gy += cell) {
+        const seed = (gx * 13 + gy * 7) | 0;
+        const tx = gx + cell / 2 + jitter(seed) * 22;
+        const ty = gy + cell / 2 + jitter(seed + 1) * 22;
+        // 3 small dots per cell
+        ctx.fillStyle = jitter(seed + 2) > 0 ? b.groundFleck : b.groundDark;
+        ctx.beginPath(); ctx.arc(tx - 4, ty,     1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(tx + 1, ty - 3, 1.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(tx + 5, ty + 2, 1.5, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    // A few longer drifting wind-streaks for desert texture
+    for (let gx = sx; gx < ex; gx += cell * 2) {
+      for (let gy = sy; gy < ey; gy += cell * 2) {
+        const seed = (gx * 31 + gy * 17) | 0;
+        const tx = gx + jitter(seed) * 30;
+        const ty = gy + jitter(seed + 1) * 30;
+        ctx.strokeStyle = b.groundDark;
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(tx - 14, ty);
+        ctx.bezierCurveTo(tx - 6, ty - 2, tx + 6, ty + 2, tx + 14, ty);
+        ctx.stroke();
+      }
+    }
+    return;
+  }
+
+  // Default: grass-blade decoration (grassland)
   ctx.lineWidth = 2;
   ctx.lineCap = 'round';
   for (let gx = sx; gx < ex; gx += cell) {
@@ -1906,7 +2070,7 @@ function drawGrass() {
       const seed = (gx * 13 + gy * 7) | 0;
       const tx = gx + cell / 2 + jitter(seed) * 22;
       const ty = gy + cell / 2 + jitter(seed + 1) * 22;
-      ctx.strokeStyle = jitter(seed + 2) > 0 ? b.grassBlade : b.grassDark;
+      ctx.strokeStyle = jitter(seed + 2) > 0 ? b.groundFleck : b.groundDark;
       ctx.beginPath();
       ctx.moveTo(tx - 4, ty); ctx.lineTo(tx - 4, ty - 6);
       ctx.moveTo(tx,     ty); ctx.lineTo(tx,     ty - 8);
@@ -1914,6 +2078,64 @@ function drawGrass() {
       ctx.stroke();
     }
   }
+}
+
+// Distant mesa silhouettes at the north edge of the world. Drawn after the
+// ground fill but before any obstacles/entities so it reads as a backdrop.
+function drawMesaBackdrop() {
+  const w = game.world.w;
+  // Layer 1: faded distant mesas
+  ctx.save();
+  ctx.fillStyle = 'rgba(180, 140, 110, 0.55)';
+  ctx.strokeStyle = 'rgba(110, 80, 60, 0.55)';
+  ctx.lineWidth = 2;
+  const drawMesa = (cx, w0, h0, seed) => {
+    const left = cx - w0 / 2;
+    const right = cx + w0 / 2;
+    const top = 60 + jitter(seed) * 4;
+    const stepLeft = left + w0 * 0.18 + jitter(seed + 1) * 6;
+    const stepRight = right - w0 * 0.16 + jitter(seed + 2) * 6;
+    ctx.beginPath();
+    ctx.moveTo(left, 200);
+    ctx.lineTo(left,  90);
+    ctx.lineTo(stepLeft, 60 + h0 * 0.2);
+    ctx.lineTo(stepLeft, top);
+    ctx.lineTo(stepRight, top);
+    ctx.lineTo(stepRight, 60 + h0 * 0.18);
+    ctx.lineTo(right, 90);
+    ctx.lineTo(right, 200);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  };
+  drawMesa(w * 0.18, 320, 80, 200);
+  drawMesa(w * 0.45, 420, 110, 210);
+  drawMesa(w * 0.78, 360, 90, 220);
+  ctx.restore();
+
+  // Layer 2: closer, warmer mesas with thicker outline
+  ctx.save();
+  ctx.fillStyle = '#c98a5a';
+  ctx.strokeStyle = '#7a4a2a';
+  ctx.lineWidth = 3;
+  const closeMesa = (cx, w0, h0, seed) => {
+    const left = cx - w0 / 2;
+    const right = cx + w0 / 2;
+    const top = 130 + jitter(seed) * 5;
+    ctx.beginPath();
+    ctx.moveTo(left, 240);
+    ctx.lineTo(left + 8, 170);
+    ctx.lineTo(left + 28 + jitter(seed + 1) * 4, top);
+    ctx.lineTo(right - 28 + jitter(seed + 2) * 4, top);
+    ctx.lineTo(right - 8, 170);
+    ctx.lineTo(right, 240);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  };
+  closeMesa(w * 0.32, 280, 100, 300);
+  closeMesa(w * 0.66, 320, 110, 310);
+  ctx.restore();
 }
 
 function drawFlower(f) {
@@ -1929,7 +2151,12 @@ function drawFlower(f) {
   ctx.beginPath(); ctx.arc(f.x, f.y, f.size * 0.55, 0, Math.PI * 2); ctx.fill();
 }
 
+// Single entry point — dispatches per obstacle type so the rest of the engine
+// (y-sort, etc.) doesn't have to care.
 function drawTree(t) {
+  if (t.type === 'cactus') return drawCactus(t);
+  if (t.type === 'rock')   return drawRock(t);
+  // Default: leafy tree
   // Soft elliptical shadow
   ctx.beginPath();
   ctx.ellipse(t.x + 6, t.y + 8, t.canopyR * 1.05, t.canopyR * 0.45, 0, 0, Math.PI * 2);
@@ -1956,6 +2183,88 @@ function drawTree(t) {
   wobblyCircle(t.x + 14, t.y - 44, t.canopyR * 0.16, {
     fill: '#447a36', stroke: null, seed: t.seed + 5, jitterAmt: 1.2,
   });
+}
+
+// Saguaro-style cactus — vertical column with a couple of upturned arms.
+function drawCactus(t) {
+  // Shadow
+  ctx.beginPath();
+  ctx.ellipse(t.x + 4, t.y + 8, t.canopyR * 0.85, t.canopyR * 0.35, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fill();
+  // Main column
+  const colH = t.canopyR * 1.9;
+  wobblyRect(t.x - 12, t.y - colH, 24, colH, {
+    fill: '#5e9a52', stroke: CONFIG.colors.ink, width: 3, radius: 12, seed: t.seed,
+  });
+  // Left arm (lower)
+  wobblyRect(t.x - 30, t.y - colH * 0.62, 14, 22, {
+    fill: '#5e9a52', stroke: CONFIG.colors.ink, width: 2.5, radius: 7, seed: t.seed + 1,
+  });
+  wobblyRect(t.x - 30, t.y - colH * 0.78, 14, 18, {
+    fill: '#5e9a52', stroke: CONFIG.colors.ink, width: 2.5, radius: 7, seed: t.seed + 2,
+  });
+  // Right arm (higher)
+  wobblyRect(t.x + 16, t.y - colH * 0.5, 14, 24, {
+    fill: '#5e9a52', stroke: CONFIG.colors.ink, width: 2.5, radius: 7, seed: t.seed + 3,
+  });
+  wobblyRect(t.x + 16, t.y - colH * 0.7, 14, 22, {
+    fill: '#5e9a52', stroke: CONFIG.colors.ink, width: 2.5, radius: 7, seed: t.seed + 4,
+  });
+  // Vertical ridge lines for texture
+  ctx.strokeStyle = '#3f7036';
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    const x = t.x - 6 + i * 6;
+    ctx.beginPath();
+    ctx.moveTo(x, t.y - colH + 6);
+    ctx.lineTo(x, t.y - 4);
+    ctx.stroke();
+  }
+  // Tiny pink bloom on top sometimes (deterministic from seed)
+  if ((t.seed % 3) === 0) {
+    wobblyCircle(t.x, t.y - colH - 4, 6, {
+      fill: '#f29ab2', stroke: CONFIG.colors.ink, width: 2, seed: t.seed + 9,
+    });
+  }
+}
+
+// Lumpy desert rock with a small darker stripe.
+function drawRock(t) {
+  // Shadow
+  ctx.beginPath();
+  ctx.ellipse(t.x + 3, t.y + 6, t.canopyR * 0.9, t.canopyR * 0.35, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fill();
+  // Main lump (base touches t.y so y-sort matches the visual base)
+  const r = t.canopyR;
+  wobblyCircle(t.x, t.y - r * 0.55, r * 0.95, {
+    fill: '#bd9a72',
+    stroke: CONFIG.colors.ink,
+    width: 3,
+    seed: t.seed,
+    jitterAmt: 2.4,
+    squashY: 0.85,
+  });
+  // Smaller lump beside it
+  wobblyCircle(t.x + r * 0.55, t.y - r * 0.35, r * 0.45, {
+    fill: '#a8865e',
+    stroke: CONFIG.colors.ink,
+    width: 2.5,
+    seed: t.seed + 1,
+    jitterAmt: 1.4,
+    squashY: 0.85,
+  });
+  // Crack line
+  ctx.strokeStyle = '#7a5a3a';
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(t.x - r * 0.45, t.y - r * 0.6);
+  ctx.lineTo(t.x - r * 0.1, t.y - r * 0.4);
+  ctx.lineTo(t.x + r * 0.15, t.y - r * 0.55);
+  ctx.stroke();
 }
 
 function drawPlayer() {
@@ -2179,6 +2488,143 @@ function drawStar(cx, cy, r, color) {
   ctx.fill();
   ctx.stroke();
   ctx.restore();
+}
+
+// Burt: tall, thin, gangly. Long stretchy arm during drags + when poking from afar.
+function drawBurt(b) {
+  const def = BULLIES.burt;
+  const bob = b.moving ? Math.sin(b.walkPhase * 8) * 1.4 : 0;
+  const cx = b.x;
+  const cy = b.y + bob;
+
+  // Shadow
+  ctx.beginPath();
+  ctx.ellipse(cx + 3, b.y + 8, 28, 9, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fill();
+
+  // Long thin legs
+  wobblyRect(cx - 14, cy - 64, 12, 64, { fill: def.pants, stroke: CONFIG.colors.ink, width: 3, radius: 5, seed: 7100 });
+  wobblyRect(cx + 2,  cy - 64, 12, 64, { fill: def.pants, stroke: CONFIG.colors.ink, width: 3, radius: 5, seed: 7101 });
+  // Pointy shoes
+  wobblyRect(cx - 18, cy - 4, 18, 12, { fill: def.shoes, stroke: CONFIG.colors.ink, width: 3, radius: 4, seed: 7102 });
+  wobblyRect(cx,      cy - 4, 18, 12, { fill: def.shoes, stroke: CONFIG.colors.ink, width: 3, radius: 4, seed: 7103 });
+
+  // Tall thin torso
+  wobblyRect(cx - 22, cy - 134, 44, 70, { fill: def.shirt, stroke: CONFIG.colors.ink, width: 3.5, radius: 8, seed: 7110 });
+  // Collar stripe
+  wobblyRect(cx - 22, cy - 134, 44, 12, { fill: def.shirtTrim, stroke: null, radius: 6, seed: 7111 });
+
+  // Arms — stretchy hand reaches the drag target if reeling someone in
+  if (b.dragT > 0 && b.dragTarget) {
+    const t = b.dragTarget;
+    const tx = t.x;
+    const ty = t.y - 50;
+    const sx = cx + 16;            // shoulder
+    const sy = cy - 124;
+    // Outer dark line for the marker outline
+    ctx.save();
+    ctx.strokeStyle = CONFIG.colors.ink;
+    ctx.lineWidth = 11;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
+    // Purple sleeve fill on top
+    ctx.strokeStyle = def.shirt;
+    ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.restore();
+    // Hand grabbing the target
+    wobblyCircle(tx, ty, 10, { fill: def.skin, stroke: CONFIG.colors.ink, width: 2.5, seed: 7140 });
+    // Idle other arm at side
+    wobblyRect(cx - 38, cy - 130, 14, 70, { fill: def.shirt, stroke: CONFIG.colors.ink, width: 3, radius: 6, seed: 7112, rotate: -0.06 });
+    wobblyCircle(cx - 35, cy - 60, 9, { fill: def.skin, stroke: CONFIG.colors.ink, width: 2.5, seed: 7114 });
+  } else {
+    // Both arms hanging long
+    wobblyRect(cx - 38, cy - 130, 14, 78, { fill: def.shirt, stroke: CONFIG.colors.ink, width: 3, radius: 6, seed: 7112, rotate: -0.07 });
+    wobblyRect(cx + 24, cy - 130, 14, 78, { fill: def.shirt, stroke: CONFIG.colors.ink, width: 3, radius: 6, seed: 7113, rotate:  0.07 });
+    wobblyCircle(cx - 35, cy - 56, 9, { fill: def.skin, stroke: CONFIG.colors.ink, width: 2.5, seed: 7114 });
+    wobblyCircle(cx + 35, cy - 56, 9, { fill: def.skin, stroke: CONFIG.colors.ink, width: 2.5, seed: 7115 });
+  }
+
+  // Long thin neck
+  wobblyRect(cx - 7, cy - 152, 14, 22, { fill: def.skin, stroke: CONFIG.colors.ink, width: 2.5, radius: 4, seed: 7120 });
+
+  // Smaller, narrow head
+  wobblyCircle(cx, cy - 168, 22, { fill: def.skin, stroke: CONFIG.colors.ink, width: 3, seed: 7130, squashY: 1.05 });
+
+  // Mean angled brows
+  ctx.strokeStyle = CONFIG.colors.ink;
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx - 12, cy - 178); ctx.lineTo(cx - 4, cy - 173);
+  ctx.moveTo(cx + 12, cy - 178); ctx.lineTo(cx + 4, cy - 173);
+  ctx.stroke();
+  // Slit eyes
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx - 10, cy - 170); ctx.lineTo(cx - 4, cy - 169);
+  ctx.moveTo(cx + 10, cy - 170); ctx.lineTo(cx + 4, cy - 169);
+  ctx.stroke();
+  // Frown
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - 6, cy - 156);
+  ctx.quadraticCurveTo(cx, cy - 161, cx + 6, cy - 156);
+  ctx.stroke();
+
+  // Slowed indicator (purple wash)
+  if (b.slowT > 0) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(120, 100, 200, 0.45)';
+    ctx.beginPath(); ctx.arc(cx, cy - 60, 50, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  if (b.hitFlashT > 0) {
+    ctx.save();
+    ctx.globalAlpha = b.hitFlashT / 0.5;
+    ctx.fillStyle = 'rgba(245, 200, 66, 0.65)';
+    ctx.beginPath(); ctx.arc(cx, cy - 80, 50, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Status badges above head
+  if (b.stunT > 0) {
+    for (let i = 0; i < 3; i++) {
+      const a = game.time * 4 + (i * Math.PI * 2 / 3);
+      drawStar(cx + Math.cos(a) * 22, cy - 200 + Math.sin(a) * 8, 7, '#f5c842');
+    }
+  } else if (b.confusedT > 0) {
+    const qY = cy - 206 + Math.sin(game.time * 5) * 3;
+    ctx.fillStyle = '#8e5fb8';
+    ctx.strokeStyle = CONFIG.colors.ink;
+    ctx.lineWidth = 2;
+    ctx.font = '900 30px "Permanent Marker", cursive';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', cx - 12, qY);  ctx.strokeText('?', cx - 12, qY);
+    ctx.fillText('?', cx + 14, qY);  ctx.strokeText('?', cx + 14, qY);
+  } else if (b.dragT > 0) {
+    // Show "GRAB!" while reeling
+    const gy = cy - 198 + Math.sin(game.time * 10) * 2;
+    ctx.fillStyle = CONFIG.colors.red;
+    ctx.strokeStyle = CONFIG.colors.ink;
+    ctx.lineWidth = 2;
+    ctx.font = '900 28px "Permanent Marker", cursive';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('GRAB!', cx, gy);
+    ctx.strokeText('GRAB!', cx, gy);
+  } else if (b.state === 'chase') {
+    const alertY = cy - 204 + Math.sin(game.time * 8) * 2;
+    ctx.fillStyle = CONFIG.colors.red;
+    ctx.strokeStyle = CONFIG.colors.ink;
+    ctx.lineWidth = 2;
+    ctx.font = '900 36px "Permanent Marker", cursive';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('!', cx, alertY); ctx.strokeText('!', cx, alertY);
+  }
 }
 
 function drawSmokeLayer() {
@@ -2492,7 +2938,7 @@ function renderPlay() {
   ctx.save();
   ctx.translate(-game.camera.x, -game.camera.y);
 
-  drawGrass();
+  drawGround();
   for (const f of game.flowers) drawFlower(f);
 
   // Smoke layer goes behind characters but in front of grass/flowers.
@@ -2506,7 +2952,7 @@ function renderPlay() {
   for (const l of game.levers)     ents.push({ y: l.y + 16,        draw: () => drawLever(l) });
   if (game.portal)                 ents.push({ y: game.portal.y,   draw: () => drawPortal(game.portal, game.time) });
   for (const tm of game.teammates) ents.push({ y: tm.y,            draw: () => drawTeammate(tm) });
-  for (const b of game.bullies)    ents.push({ y: b.y,             draw: () => drawBob(b) });
+  for (const b of game.bullies)    ents.push({ y: b.y,             draw: () => (b.key === 'burt' ? drawBurt(b) : drawBob(b)) });
   ents.push({ y: game.player.y, draw: drawPlayer });
   ents.sort((a, b) => a.y - b.y);
   for (const e of ents) e.draw();
@@ -2599,17 +3045,29 @@ function renderVictory() {
 
   ctx.save();
   ctx.globalAlpha = alpha;
-  wobblyRect(CONFIG.view.w / 2 - 420, 230, 840, 220, {
+  wobblyRect(CONFIG.view.w / 2 - 420, 220, 840, 250, {
     fill: '#fffaeb', stroke: CONFIG.colors.ink, width: 6, radius: 24, seed: 9998,
   });
-  markerText('GRASSLAND', CONFIG.view.w / 2, 312,
+  const biomeName = (game.world.def.name || '').toUpperCase();
+  markerText(biomeName, CONFIG.view.w / 2, 302,
     { size: 78, color: CONFIG.colors.red, shadow: true });
-  markerText('CLEARED!', CONFIG.view.w / 2, 388,
+  markerText('CLEARED!', CONFIG.view.w / 2, 378,
     { size: 78, color: CONFIG.colors.ink, shadow: true });
-  handText('RAMS WAY!', CONFIG.view.w / 2, 432,
-    { size: 26, color: CONFIG.colors.inkSoft });
+
+  // What's next? Tease the upcoming biome (if any).
+  const idx = BIOME_ORDER.indexOf(game.biome);
+  const nextKey = BIOME_ORDER[idx + 1];
+  let subtitle = 'RAMS WAY!';
+  if (nextKey) {
+    const nextName = (BIOMES[nextKey] && BIOMES[nextKey].name) || cap(nextKey);
+    subtitle = `next stop: ${nextName}!`;
+  }
+  handText(subtitle, CONFIG.view.w / 2, 430,
+    { size: 28, color: CONFIG.colors.inkSoft });
   ctx.restore();
 }
+
+function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
 
 function renderHUD() {
   const c = CONFIG.colors;
@@ -2797,6 +3255,35 @@ function renderGameOver() {
     CONFIG.view.w / 2, 520, { size: 22, color: c.inkSoft });
 }
 
+// "Forest is locked / coming soon" placeholder shown when the next biome
+// in BIOME_ORDER hasn't been built yet.
+function renderPlaceholder() {
+  const c = CONFIG.colors;
+  ctx.fillStyle = c.paper;
+  ctx.fillRect(0, 0, CONFIG.view.w, CONFIG.view.h);
+  drawTitleDoodles(game.time * 0.5);
+
+  const next = game.placeholderBiome || 'forest';
+  const nextName = (BIOMES[next] && BIOMES[next].name) || cap(next);
+
+  ctx.fillStyle = 'rgba(31, 26, 23, 0.18)';
+  ctx.fillRect(0, 180, CONFIG.view.w, 360);
+
+  markerText(`${nextName.toUpperCase()}`, CONFIG.view.w / 2, 250,
+    { size: 100, color: c.red, shadow: true });
+  handText('is locked — coming in the next milestone!',
+    CONFIG.view.w / 2, 320, { size: 28, color: c.inkSoft });
+  handText(`You cleared Grassland AND Desert. Nice run!`,
+    CONFIG.view.w / 2, 360, { size: 24, color: c.inkSoft });
+
+  const pulse = 0.5 + 0.5 * Math.sin(game.time * 3);
+  ctx.save();
+  ctx.globalAlpha = 0.65 + pulse * 0.35;
+  markerText('press SPACE or ESC to continue',
+    CONFIG.view.w / 2, 480, { size: 36, color: c.ink });
+  ctx.restore();
+}
+
 function renderBiomeIntro() {
   const total = PLAY.introDuration;
   const t = game.introT;
@@ -2928,6 +3415,14 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
+
+  if (game.scene === 'placeholder') {
+    if (isKey(e, KEYS.confirm) || isKey(e, KEYS.back)) {
+      game.scene = 'select';
+      keysHeld.clear();
+    }
+    return;
+  }
 });
 
 window.addEventListener('keyup', (e) => {
@@ -2987,6 +3482,7 @@ function frame(now) {
   else if (game.scene === 'select')    renderSelect(game.time);
   else if (game.scene === 'play')      renderPlay();
   else if (game.scene === 'gameOver')  renderGameOver();
+  else if (game.scene === 'placeholder') renderPlaceholder();
 
   ctx.restore();
 
@@ -2999,6 +3495,8 @@ function frame(now) {
     hintEl.textContent = 'arrows move · E interact · SPACE time skill check · F/D skills · ESC back';
   } else if (game.scene === 'gameOver') {
     hintEl.textContent = 'SPACE  retry  ·  ESC  pick another hero';
+  } else if (game.scene === 'placeholder') {
+    hintEl.textContent = 'SPACE or ESC to continue';
   }
 
   requestAnimationFrame(frame);

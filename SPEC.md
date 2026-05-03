@@ -103,10 +103,11 @@ The two characters the player didn't pick become AI-controlled teammates:
 
 ### Burt — The Stretcher (biomes 2–3)
 - Hit cooldown: 6 sec
-- Hit distance: 6 m (long reach)
-- Speed: Slow
-- Sight: 20 m
-- **Special:** Can drag players toward him within 20 m. 8-second cooldown.
+- Hit distance: 6 m (long reach — stretchy arm pokes from this far)
+- Speed: Slow (~72 px/s)
+- Sight: 20 m (sees you across most of the desert)
+- **Drag (hook):** When the player or a teammate is within 20 m and his hook is off cooldown (8 sec), Burt fires a stretchy arm and yanks them in to ~140 px range over ~0.55 seconds. The target's input is locked during the drag.
+- **Visual:** tall, gangly, dark purple shirt, slit eyes. While dragging, his arm visibly extends from his shoulder to the target's grabbed position.
 
 ### Bryan — The Boss (biome 4 only)
 - Hit cooldown: 0.2 sec (rapid attacks)
