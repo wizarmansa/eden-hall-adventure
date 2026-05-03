@@ -1,0 +1,78 @@
+/* Eden Hall Adventure — kid-drawn / hand-lettered aesthetic */
+
+:root {
+  --paper: #f6ecd2;        /* warm construction-paper cream */
+  --paper-dark: #e9dcb4;   /* edge of the paper */
+  --ink: #1f1a17;          /* near-black marker */
+  --ink-soft: #423931;
+  --red: #d6403c;          /* primary marker red */
+  --yellow: #f5c842;       /* Steelers / school accent */
+  --black: #161616;        /* Steelers black */
+  --violet: #8e5fb8;       /* Violet's color */
+  --ada: #f08a86;           /* Ada's coral */
+  --vada: #4a90c2;          /* Vada's denim blue */
+  --grass: #7bb265;
+  --shadow: rgba(31, 26, 23, 0.18);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #2b241c;          /* dark wood-desk frame around the paper */
+  overflow: hidden;
+  font-family: 'Patrick Hand', 'Comic Sans MS', system-ui, sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Subtle paper-grain via repeating radial dots — looks like construction paper */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+    radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 4px 4px, 7px 7px;
+  background-position: 0 0, 2px 3px;
+  z-index: 5;
+  mix-blend-mode: multiply;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#game {
+  display: block;
+  background: var(--paper);
+  /* slight rotation + heavy shadow makes it feel like a piece of paper on a desk */
+  box-shadow:
+    0 0 0 6px var(--paper-dark),
+    0 18px 40px rgba(0,0,0,0.6),
+    0 6px 14px rgba(0,0,0,0.4);
+  border-radius: 4px;
+  image-rendering: auto;
+}
+
+.hint {
+  position: absolute;
+  bottom: 18px;
+  right: 22px;
+  font-family: 'Patrick Hand', cursive;
+  font-size: 16px;
+  color: rgba(246, 236, 210, 0.55);
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  z-index: 10;
+}

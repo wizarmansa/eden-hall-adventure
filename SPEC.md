@@ -29,12 +29,16 @@ The final biome is the boss fight. If the player's health hits zero, it's game o
 
 ## Controls
 
-Keyboard only (Chromebook-friendly):
+Keyboard only (Chromebook-friendly). Two-handed split: arrow keys on the right hand for movement, left hand for interact + skills + skill-check timing.
 
-- **WASD** or **Arrow Keys**: Move
-- **E** or **Spacebar**: Interact (start repairing a lever, enter portal, revive teammate)
-- **F**, **C**, **J**: Character abilities
+- **Arrow Keys**: Move
+- **E**: Interact (start repairing a lever, enter portal, revive teammate)
+- **F**: Skill 1 (every character has one)
+- **D**: Skill 2 (every character has one)
+- **Spacebar**: Skill-check timing (press in the green zone during lever repair)
 - **Esc**: Pause
+
+Passive Skill 2s (Vada's Big Backpack, Violet's Steady Hands) trigger automatically — the D key does nothing for those characters. Ada's Skill 2 is active.
 
 ---
 
@@ -45,31 +49,28 @@ The player picks one of three characters at the start. Each has different stats 
 ### Vada — The Equipper
 - **Health:** 2 hearts
 - **Lever Speed:** Slow (2/5)
-- **Movement Speed:** Slow (1/5)
+- **Movement Speed:** Slow (2/5)
 - **Skill Check Window:** Generous (5/5, ~25 sec)
-- **Stamina:** High (4/5)
-- **Ability 1 (F):** Starts with 3 stamina recharges equipped — press F to instantly refill stamina (3 uses per run)
-- **Ability 2 (C):** Larger inventory — can hold up to 5 items (Ada and Violet hold 2)
-- **Ability 3 (J):** When a teammate is being chased, give them a 10% speed boost for 6 seconds. 30-second cooldown.
+- **Skill 1 (F):** Melee attack — auto-targets the nearest bully within ~3m, stuns them (dizzy, can't move or attack) for 5 seconds. 15-second cooldown.
+- **Skill 2 (D, passive):** Larger inventory — can hold up to 5 items (Ada and Violet hold 2). No item system in v1, so this is set dressing until items ship.
 
 ### Ada — The Cook
 - **Health:** 4 hearts
 - **Lever Speed:** Medium (3/5)
 - **Movement Speed:** Medium (3/5)
 - **Skill Check Window:** Medium (3/5, ~15 sec)
-- **Stamina:** Low (2/5)
-- **Ability 1 (F):** Generate 2 burgers (heal 1 heart each). 30-second cooldown.
+- **Skill 1 (F):** Scream — auto-targets all bullies within ~5m, confuses them (they wander randomly instead of chasing) **and** slows them by 50% for 5 seconds. 20-second cooldown.
+- **Skill 2 (D):** Burger Time — generate 2 burgers (heal 1 heart each, anyone can pick them up). 30-second cooldown.
 
 ### Violet — The Trapper
 - **Health:** 3 hearts
 - **Lever Speed:** Fast (5/5)
 - **Movement Speed:** Fast (4/5)
 - **Skill Check Window:** Tight (2/5, ~10 sec)
-- **Stamina:** Medium (3/5)
-- **Ability 1 (F):** Spawn a bully trap that slows them by 50% for 10 seconds. 60-second cooldown.
-- **Ability 2 (C):** When working a lever, gets +10 sec on her skill check window if a bully is within 15 meters. (Passive — kicks in automatically.)
+- **Skill 1 (F):** Spawn a bully trap that slows the first bully who steps on it by 50% for 10 seconds. 20-second cooldown.
+- **Skill 2 (D, passive):** Steady Hands — when working a lever, gets +10 sec on her skill check window if a bully is within 15 meters. Kicks in automatically.
 
-**Note:** Each character had 3 abilities on the original sheet. We're shipping with the abilities listed above for v1; the rest are parked for v2.
+**Design note (anti-bully balance):** All three girls now have anti-bully debuffs (Vada stuns, Ada confuses+slows, Violet traps+slows). Regular bullies (Bob, Burt) become much more manageable; that's fine because they were already pretty light. The Bryan boss fight in Aquatics is where the difficulty lives — see his section below.
 
 ---
 
@@ -91,7 +92,14 @@ The two characters the player didn't pick become AI-controlled teammates:
 - Hit distance: 0.5 m (must be next to you)
 - Speed: Medium
 - Sight: Cannot see unless you're within 3 m
-- **Special:** Farts a green smoke cloud that follows him. Smoke reduces player visibility when inside it.
+- **Smoke trail (gameplay, not just visual):**
+  - Bob emits a green smoke puff **every 1.5 seconds *while moving*** (no puffs while stunned or standing still), leaving a persistent trail behind him.
+  - Each puff lingers for **4 seconds** before fading.
+  - Walking through smoke **slows the player to 60% speed (40% slowdown)**. The slow persists **1 second after exiting** so it can't be instantly cancelled by stepping out.
+  - The player frowns (and cheeks turn green) the whole time the slow is active.
+- **AI teammates path *around* smoke clouds when fleeing** — they won't run blindly through their own friendly fire.
+- **Visual:** chunky, opaque bright-green clouds with thick dark-green outlines and a few rising stink-lines. Slight scale wobble for cheap animation. Should be unmistakable from a distance, not a faint wisp.
+- Applies to Bob in every biome he appears in (Grassland, Desert, Forest).
 
 ### Burt — The Stretcher (biomes 2–3)
 - Hit cooldown: 6 sec
@@ -108,6 +116,12 @@ The two characters the player didn't pick become AI-controlled teammates:
 - **Phase 1 (above water/flying):** Flies for 5 seconds at +45% speed, -10% sight. Brief landing windows are when she's vulnerable.
 - **Phase 2 (in water/fish form):** Swims fast in straight lines, ambushes from below. Player must time movement between her swim-by attacks.
 - The Aquatics biome forces the player into the water to reach levers, so they can't simply outrun her.
+
+**Boss balance vs. player debuffs (important):** Now that all three girls have anti-bully debuffs, Bryan needs special handling so the fight stays threatening:
+- **Immune to stun, confuse, and slow** during her flying phase (Phase 1) and during swim-by transit (Phase 2). Bullets-pass-through-walls feel — debuffs simply don't apply.
+- **Vulnerable** only during the brief landing windows of Phase 1 and the surface windows of Phase 2.
+- Even when vulnerable, debuff durations on Bryan are **capped at 1.5 seconds** (compare 5–10 sec on regular bullies).
+- This forces players to *time* their debuffs around her vulnerable windows rather than spamming them, keeping the fight tense.
 
 ---
 
@@ -184,7 +198,8 @@ Cut from the original design sheet to keep scope manageable:
 - Shop, coins, gems, tickets, outfits, daily login XP
 - "Death" game mode (last-player-standing)
 - Portal sacrifice mechanic (40 tickets to revive)
-- Some character abilities (Vada Ability 1 simplified; Ada Ability 2; Violet's third ability)
+- **Stamina mechanic** (originally a stat for sprinting; removed entirely — wasn't pulling its weight in a 5-minute game). All "stamina" stats and the original Vada stamina-pack ability are gone.
+- **Item / inventory system.** Vada's Big Backpack passive is in the spec but has nothing to hold yet — the Heinz ketchup easter egg is the only candidate pickup.
 - Multiplayer
 - Mid-run boost shop / legendary items
 - Persistent progress / save files
@@ -210,13 +225,13 @@ If v1 lands well with classmates, any of these can be v2 features.
 
 The game is "done" when:
 1. ✅ Title screen lets the player pick Vada, Ada, or Violet.
-2. ✅ Movement (WASD/arrows) and interact (E) work.
+2. ✅ Arrow-key movement and E-to-interact work.
 3. ✅ All four biomes (Grassland → Desert → Forest → Aquatics) are playable in sequence.
-4. ✅ Each character's main F ability works; Violet's passive C ability triggers correctly.
+4. ✅ Each character's F ability works; passive D abilities (Vada Big Backpack stub, Violet Steady Hands) trigger correctly.
 5. ✅ Bob and Burt patrol, chase, and damage on contact, with their special behaviors (smoke, drag).
-6. ✅ Skill-check mini-game functions at levers.
+6. ✅ Skill-check mini-game functions at levers (Space to time hits in the green zone).
 7. ✅ Portal opens after all levers are fixed and transports to the next biome.
-8. ✅ Aquatics biome boss fight (Bryan, both phases) ends in a win screen on victory.
+8. ✅ Aquatics biome boss fight (Bryan, both phases) ends in a win screen on victory; Bryan resists/short-duration debuffs as specced.
 9. ✅ Game Over screen with "Play Again" appears at zero health.
 10. ✅ A successful full run takes about 7–8 minutes.
 11. ✅ Title screen shows "Eden Hall Adventure" with credit to Violet (designer) and friends Vada and Ada.
