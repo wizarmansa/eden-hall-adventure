@@ -155,8 +155,8 @@ const BIOMES = {
     groundFleck:  '#b08850',
     flowerColors: ['#e8a04a', '#d8602a', '#fde08a'],   // wildflowers / cactus blooms
     treeCount:    0,                       // no trees here
-    cactusCount:  16,
-    rockCount:    9,
+    cactusCount:  22,                      // bumped — more cover for hiding from bullies
+    rockCount:    16,
     treeSeed:     4321,
     flowerCount:  28,                      // sparse
     leverCount:   4,
@@ -196,7 +196,7 @@ const BULLIES = {
     speed:          72,         // very slow — relies on his reach
     patrolFactor:   0.55,
     sight:          1600,       // 20m at 80 px/m — sees across most of the desert
-    hitDistance:    480,        // 6m — long-reach swat
+    hitDistance:    384,        // ~4.8m — reduced 20% from original 6m
     hitCooldown:    6.0,
     chaseGiveUp:    900,
     radius:         24,
@@ -1427,6 +1427,27 @@ function dealDamage(target) {
   }
 }
 
+// True if the line segment (x1,y1)→(x2,y2) is blocked by the canopy of any
+// obstacle (tree/cactus/rock). Used so bullies can't see the player when
+// they're hiding on the far side of cover.
+function sightBlocked(x1, y1, x2, y2) {
+  for (const o of game.trees) {
+    const cx = o.x;
+    const cy = o.y - 4;                 // approximate visual centre
+    const r  = o.canopyR * 0.7;         // generous, but not the full canopy
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) continue;
+    let t = ((cx - x1) * dx + (cy - y1) * dy) / lenSq;
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    const px = x1 + t * dx;
+    const py = y1 + t * dy;
+    if ((cx - px) * (cx - px) + (cy - py) * (cy - py) < r * r) return true;
+  }
+  return false;
+}
+
 function pushOutOfTrees(ent) {
   for (const t of game.trees) {
     const ddx = ent.x - t.x;
@@ -1512,7 +1533,9 @@ function updateBullies(dt) {
       let closest = null, closestD = def.sight;
       for (const t of candidates) {
         const d = Math.hypot(b.x - t.x, b.y - t.y);
-        if (d < closestD) { closest = t; closestD = d; }
+        if (d >= closestD) continue;
+        if (sightBlocked(b.x, b.y, t.x, t.y)) continue;   // hidden behind cover
+        closest = t; closestD = d;
       }
 
       if (closest) {
@@ -1526,12 +1549,14 @@ function updateBullies(dt) {
         }
       }
 
-      // Burt: fire the long-reach drag if a target's in hook range and we're cool.
+      // Burt: fire the long-reach drag if a target's in hook range, in line
+      // of sight, and we're cool. Cover blocks the hook just like sight.
       if (b.key === 'burt' && b.target && b.dragT <= 0 && b.hookCooldown <= 0 &&
           b.target.hearts > 0 && !b.target.beingDragged) {
         const td = Math.hypot(b.x - b.target.x, b.y - b.target.y);
         const minDragDist = def.dragStopDist + 40;
-        if (td > minDragDist && td < def.hookRange) {
+        if (td > minDragDist && td < def.hookRange &&
+            !sightBlocked(b.x, b.y, b.target.x, b.target.y)) {
           b.dragT = def.dragDuration;
           b.dragTarget = b.target;
           b.target.beingDragged = b;
@@ -3027,6 +3052,184 @@ function renderSkillCheck() {
     CONFIG.view.w / 2, barY + barH + 28, { size: 20, color: c.inkSoft });
 }
 
+// Side-view camel — used as the desert-clear celebration mascot.
+function drawCamel(cx, cy, time) {
+  const ink   = CONFIG.colors.ink;
+  const tan   = '#d4a868';
+  const shade = '#a87a40';
+
+  ctx.save();
+
+  // Soft shadow under the camel
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 4, 50, 6, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+  ctx.fill();
+
+  // Legs — 4, paired (front/back-pair offset by π for a walk cycle)
+  const legPositions = [-26, -10, 10, 26];
+  for (let i = 0; i < 4; i++) {
+    const phase = time * 7 + (i % 2 === 0 ? 0 : Math.PI);
+    const swing = Math.sin(phase) * 5;
+    ctx.strokeStyle = tan;
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx + legPositions[i], cy - 14);
+    ctx.lineTo(cx + legPositions[i] + swing, cy + 4);
+    ctx.stroke();
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + legPositions[i] - 4, cy - 14);
+    ctx.lineTo(cx + legPositions[i] - 4 + swing, cy + 4);
+    ctx.moveTo(cx + legPositions[i] + 4, cy - 14);
+    ctx.lineTo(cx + legPositions[i] + 4 + swing, cy + 4);
+    ctx.stroke();
+  }
+
+  // Body — long oval
+  wobblyRect(cx - 38, cy - 28, 76, 28, {
+    fill: tan, stroke: ink, width: 3, radius: 16, seed: 12000,
+  });
+  // Belly shading
+  wobblyRect(cx - 34, cy - 14, 68, 14, {
+    fill: shade, stroke: null, radius: 10, seed: 12001, jitterAmt: 0.4,
+  });
+
+  // Two humps on top
+  wobblyCircle(cx - 14, cy - 38, 16, {
+    fill: tan, stroke: ink, width: 3, seed: 12010, jitterAmt: 1.3,
+  });
+  wobblyCircle(cx + 14, cy - 38, 14, {
+    fill: tan, stroke: ink, width: 3, seed: 12011, jitterAmt: 1.3,
+  });
+
+  // Long neck — slants up-left toward the head (camel is walking left)
+  ctx.save();
+  ctx.translate(cx - 32, cy - 26);
+  ctx.rotate(-0.42);
+  wobblyRect(-8, -38, 16, 38, {
+    fill: tan, stroke: ink, width: 3, radius: 6, seed: 12020,
+  });
+  ctx.restore();
+
+  // Head
+  const headX = cx - 56;
+  const headY = cy - 56;
+  wobblyCircle(headX, headY, 13, {
+    fill: tan, stroke: ink, width: 3, seed: 12030, jitterAmt: 1.0,
+  });
+  // Snout sticking out the front
+  wobblyRect(headX - 18, headY - 4, 14, 12, {
+    fill: tan, stroke: ink, width: 2.5, radius: 5, seed: 12031,
+  });
+  // Eye
+  ctx.fillStyle = ink;
+  ctx.beginPath();
+  ctx.arc(headX - 4, headY - 2, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+  // Tiny ear (triangle pointing up-back)
+  ctx.beginPath();
+  ctx.moveTo(headX + 1, headY - 11);
+  ctx.lineTo(headX + 7, headY - 16);
+  ctx.lineTo(headX + 8, headY - 7);
+  ctx.closePath();
+  ctx.fillStyle = tan;
+  ctx.fill();
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // Mouth/smile
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(headX - 16, headY + 3);
+  ctx.lineTo(headX - 10, headY + 4);
+  ctx.stroke();
+
+  // Tail wag at the back-right
+  const tailWag = Math.sin(time * 6) * 5;
+  ctx.strokeStyle = tan;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(cx + 36, cy - 22);
+  ctx.lineTo(cx + 50 + tailWag, cy - 16);
+  ctx.stroke();
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx + 36, cy - 22);
+  ctx.lineTo(cx + 50 + tailWag, cy - 16);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// Hand-drawn speech bubble with a tail pointing down toward (cx, cy+...)
+function drawSpeechBubble(cx, cy, text) {
+  ctx.font = '700 28px "Permanent Marker", cursive';
+  const tw = ctx.measureText(text).width;
+  const padX = 22, padY = 14;
+  const w = tw + padX * 2;
+  const h = 28 + padY * 2;
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+
+  // Tail FIRST so the bubble outline overdraws it cleanly at the join
+  ctx.save();
+  ctx.fillStyle = '#fffaeb';
+  ctx.strokeStyle = CONFIG.colors.ink;
+  ctx.lineWidth = 4;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx - 22, y + h - 2);
+  ctx.lineTo(cx - 32, y + h + 22);
+  ctx.lineTo(cx + 4,  y + h - 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Bubble body
+  wobblyRect(x, y, w, h, {
+    fill: '#fffaeb', stroke: CONFIG.colors.ink, width: 4, radius: 16,
+    seed: 13000, jitterAmt: 1.2,
+  });
+
+  // Text
+  ctx.fillStyle = CONFIG.colors.red;
+  ctx.font = '700 28px "Permanent Marker", cursive';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, y + h / 2);
+}
+
+// Camel walks across the lower portion of the screen during desert victory.
+// Speech bubble pops up while it's mid-screen.
+function drawCamelGreeting() {
+  if (game.biome !== 'desert') return;
+  const total = PLAY.victoryDuration;
+  const elapsed = total - game.victoryT;
+  const delay = 0.35;
+  const moveDur = total - delay;
+  const progress = clamp((elapsed - delay) / moveDur, 0, 1);
+
+  const startX = CONFIG.view.w + 180;
+  const endX   = -180;
+  const cx = startX + (endX - startX) * progress;
+  const cy = CONFIG.view.h - 80;
+  if (cx < -160 || cx > CONFIG.view.w + 200) return;
+
+  drawCamel(cx, cy, elapsed);
+
+  // Speech bubble appears once the camel is on screen and disappears before exit.
+  if (progress > 0.20 && progress < 0.85) {
+    drawSpeechBubble(cx + 30, cy - 110, 'Congratulations!');
+  }
+}
+
 function renderVictory() {
   const total = PLAY.victoryDuration;
   const t = game.victoryT;
@@ -3065,6 +3268,9 @@ function renderVictory() {
   handText(subtitle, CONFIG.view.w / 2, 430,
     { size: 28, color: CONFIG.colors.inkSoft });
   ctx.restore();
+
+  // Mascot pass-through (currently desert only — ships with a camel)
+  drawCamelGreeting();
 }
 
 function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }

@@ -87,6 +87,8 @@ The two characters the player didn't pick become AI-controlled teammates:
 
 ## Bullies (Enemies)
 
+**Line of sight:** All bullies' sight (and Burt's drag hook) is blocked by world obstacles — trees, cacti, and rocks. Hiding on the far side of cover actually breaks aggro. This applies in every biome.
+
 ### Bob — The Smoker (biomes 1–3)
 - Hit cooldown: 3 sec
 - Hit distance: 0.5 m (must be next to you)
@@ -103,10 +105,10 @@ The two characters the player didn't pick become AI-controlled teammates:
 
 ### Burt — The Stretcher (biomes 2–3)
 - Hit cooldown: 6 sec
-- Hit distance: 6 m (long reach — stretchy arm pokes from this far)
+- Hit distance: ~4.8 m (long reach — stretchy arm pokes from this far. Reduced 20% from the original 6 m for fairness.)
 - Speed: Slow (~72 px/s)
-- Sight: 20 m (sees you across most of the desert)
-- **Drag (hook):** When the player or a teammate is within 20 m and his hook is off cooldown (8 sec), Burt fires a stretchy arm and yanks them in to ~140 px range over ~0.55 seconds. The target's input is locked during the drag.
+- Sight: 20 m (sees you across most of the desert) — **but blocked by cover** (cacti, rocks, trees)
+- **Drag (hook):** When the player or a teammate is within 20 m, in line of sight, and his hook is off cooldown (8 sec), Burt fires a stretchy arm and yanks them in to ~140 px range over ~0.55 seconds. The target's input is locked during the drag. Hiding behind a cactus/rock breaks the hook just like it breaks sight.
 - **Visual:** tall, gangly, dark purple shirt, slit eyes. While dragging, his arm visibly extends from his shoulder to the target's grabbed position.
 
 ### Bryan — The Boss (biome 4 only)
